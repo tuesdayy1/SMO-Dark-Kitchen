@@ -1,0 +1,179 @@
+@startuml
+title Вариант 22 — диаграмма классов СМО (архитектура для C++)
+left to right direction
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+hide empty members
+
+package "Модель и события" {
+  class Order {
+    - id: std::string
+    - sourceId: int
+    - arrivalTime: double
+    - serviceStartTime: std::optional<double>
+    - departureTime: std::optional<double>
+    - status: OrderStatus
+    + waitingTime(): double
+    + systemTime(): double
+  }
+  enum OrderStatus {
+    WAITING
+    SERVICING
+    DONE
+    REFUSED
+  }
+  enum EventType {
+    ARRIVAL
+    SERVICE_END
+  }
+  class Event {
+    + time: double
+    + type: EventType
+    + sourceId: int
+    + deviceId: int
+  }
+  class EventCalendar {
+    - pending: std::priority_queue<Event>
+    + schedule(const Event& event): void
+    + popNext(): Event
+    + isEmpty(): bool
+    + snapshot(): std::vector<Event>
+  }
+  class OrderSource {
+    - id: int
+    - priority: int
+    - minInterval: double
+    - maxInterval: double
+    - generated: int
+    - calendar: EventCalendar&
+    + generate(double t): Order
+    + scheduleNext(double t): void
+  }
+}
+
+package "Буфер и диспетчеры" {
+  class BufferQueue {
+    - capacity: size_t
+    - orders: std::deque<Order>
+    + hasFreeSlot(): bool
+    + isEmpty(): bool
+    + enqueueAtEnd(const Order& order): size_t
+    + evictNewest(): Order
+    + takeHighestPriorityNewest(): Order
+    + snapshot(): std::vector<Order>
+  }
+  class PlacementDispatcher {
+    - buffer: BufferQueue&
+    - statistics: StatisticsCollector&
+    + onArrival(const Order& order, double t): void
+  }
+  class SelectionDispatcher {
+    - buffer: BufferQueue&
+    - pool: DevicePool&
+    - calendar: EventCalendar&
+    - statistics: StatisticsCollector&
+    + dispatchAvailable(double t): void
+  }
+}
+
+package "Приборы" {
+  class ServiceDevice {
+    - id: int
+    - busy: bool
+    - currentOrder: std::optional<Order>
+    - meanServiceTime: double
+    - busyTime: double
+    + isFree(): bool
+    + start(const Order& order, double t): double
+    + finish(double t): Order
+  }
+  class DevicePool {
+    - devices: std::vector<ServiceDevice>
+    - nextPointer: size_t
+    + findFreeRoundRobin(): std::optional<int>
+    + start(int deviceId, const Order& order, double t): double
+    + finish(int deviceId, double t): Order
+    + pointer(): size_t
+  }
+}
+
+package "Управление и результаты" {
+  class SimulationEngine {
+    - currentTime: double
+    - calendar: EventCalendar
+    - sources: std::vector<OrderSource>
+    - buffer: BufferQueue
+    - pool: DevicePool
+    - statistics: StatisticsCollector
+    - placement: PlacementDispatcher
+    - selection: SelectionDispatcher
+    + initialize(): void
+    + step(): bool
+    + run(): SimulationResult
+  }
+  class StatisticsCollector {
+    - generatedBySource: std::map<int,int>
+    - refusedBySource: std::map<int,int>
+    - completed: std::vector<Order>
+    + registerArrival(const Order& order): void
+    + registerRefusal(const Order& order, double t): void
+    + registerStart(const Order& order, int deviceId, double t): void
+    + registerCompletion(const Order& order, int deviceId, double t): void
+    + makeReport(double endTime): SimulationResult
+  }
+  class SimulationResult {
+    + perSourceMetrics: std::map<int,Metrics>
+    + utilization: std::map<int,double>
+  }
+  class Metrics {
+    + generated: int
+    + refused: int
+    + refusalProbability: double
+    + meanWaiting: double
+    + meanService: double
+    + meanSystem: double
+    + waitingVariance: double
+    + serviceVariance: double
+  }
+  class StepView {
+    - engine: SimulationEngine&
+    + showState(double t): void
+  }
+}
+
+SimulationEngine *-- EventCalendar
+SimulationEngine *-- BufferQueue
+SimulationEngine *-- DevicePool
+SimulationEngine *-- StatisticsCollector
+SimulationEngine *-- PlacementDispatcher
+SimulationEngine *-- SelectionDispatcher
+SimulationEngine o-- "1..*" OrderSource
+PlacementDispatcher --> BufferQueue : buffer&
+PlacementDispatcher --> StatisticsCollector : statistics&
+SelectionDispatcher --> BufferQueue : buffer&
+SelectionDispatcher --> DevicePool : pool&
+SelectionDispatcher --> EventCalendar : calendar&
+SelectionDispatcher --> StatisticsCollector : statistics&
+OrderSource --> EventCalendar : calendar&
+OrderSource ..> Order : generate()
+DevicePool *-- "1..*" ServiceDevice
+BufferQueue o-- "0..*" Order
+ServiceDevice --> "0..1" Order : обслуживает
+EventCalendar o-- "0..*" Event
+Order --> OrderStatus
+Event --> EventType
+StatisticsCollector ..> SimulationResult : makeReport()
+SimulationResult *-- Metrics
+StepView --> SimulationEngine : engine&
+
+note bottom of BufferQueue
+Д1ОЗ2 — в конец очереди со сдвигом;
+Д1ОО4 — вытесняется последний поступивший;
+Д2Б4 — одна заявка: приоритет источника;
+при равенстве выбран самый новый чек.
+end note
+note bottom of DevicePool
+Д2П2: поиск свободного прибора по кольцу;
+УП обновляется при успешном назначении.
+end note
+@enduml

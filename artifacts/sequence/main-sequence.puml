@@ -1,0 +1,98 @@
+@startuml
+title Вариант 22 — основной sequence (единый календарь событий)
+hide footbox
+autonumber
+participant "SimulationEngine" as Engine
+participant "EventCalendar" as Cal
+participant "OrderSource" as Source
+control "PlacementDispatcher" as Placement
+queue "BufferQueue" as Buffer
+control "SelectionDispatcher" as Selection
+participant "DevicePool" as Pool
+participant "StatisticsCollector" as Stats
+participant "StepView" as View
+
+note over Source,Pool
+ИБ: бесконечные источники (до заданного лимита моделирования)
+ИЗ2: равномерные интервалы поступления
+ПЗ1: экспоненциальная длительность обслуживания
+Диспетчеры — программные компоненты; приборы — повара в бизнес-домене.
+end note
+Engine -> Source: scheduleNext(0)
+Source -> Cal: schedule(ARRIVAL, tNext)
+Cal --> Source: событие сохранено
+
+loop Пока календарь не пуст
+  Engine -> Cal: popNext()
+  Cal --> Engine: Event(time, type, sourceId, deviceId)
+  Engine -> Engine: currentTime = event.time
+  alt event.type == ARRIVAL
+    Engine -> Source: generate(currentTime)
+    Source --> Engine: Order
+    Engine -> Source: scheduleNext(currentTime) [если лимит не достигнут]
+    opt Генерация продолжается
+      Source -> Cal: schedule(ARRIVAL, tNext)
+      Cal --> Source: событие сохранено
+    end
+    Engine -> Placement: onArrival(order, currentTime)
+    Placement -> Stats: registerArrival(order)
+    Stats --> Placement: учтено
+    Placement -> Buffer: hasFreeSlot()
+    Buffer --> Placement: true / false
+    alt Есть место (включая Happy Flow)
+      Placement -> Buffer: enqueueAtEnd(order) [Д1ОЗ2]
+      Buffer --> Placement: позиция
+    else Буфер полон, приборы заняты
+      Placement -> Buffer: evictNewest() [Д1ОО4]
+      Buffer --> Placement: вытесненный Order
+      Placement -> Stats: registerRefusal(evicted, currentTime)
+      Stats --> Placement: учтено
+      Placement -> Buffer: enqueueAtEnd(order) [Д1ОЗ2]
+      Buffer --> Placement: позиция
+    end
+    Placement --> Engine: обработка поступления завершена
+  else event.type == SERVICE_END
+    Engine -> Pool: finish(event.deviceId, currentTime)
+    Pool --> Engine: завершённый Order
+    Engine -> Stats: registerCompletion(order, deviceId, currentTime)
+    Stats --> Engine: учтено
+  end
+
+  Engine -> Selection: dispatchAvailable(currentTime)
+  loop Пока буфер не пуст и есть свободный прибор
+    Selection -> Buffer: isEmpty()
+    Buffer --> Selection: true / false
+    Selection -> Pool: findFreeRoundRobin() [Д2П2]
+    Pool --> Selection: deviceId / none
+    alt Заявка ожидает и свободный прибор найден
+      Selection -> Buffer: takeHighestPriorityNewest() [Д2Б4]
+      Buffer --> Selection: выбранный Order; очередь сдвинута
+      note right of Buffer
+      Д2Б4: приоритет номера источника, одна заявка.
+      При равном приоритете здесь принято правило:
+      последняя поступившая (из бизнес-домена).
+      end note
+      Selection -> Pool: start(deviceId, order, currentTime) [ПЗ1]
+      Pool --> Selection: finishTime; УП переведён за deviceId
+      Selection -> Cal: schedule(SERVICE_END, finishTime, deviceId)
+      Cal --> Selection: событие сохранено
+      Selection -> Stats: registerStart(order, deviceId, currentTime)
+      Stats --> Selection: учтено
+    else Буфер пуст или все приборы заняты
+      note over Selection,Pool
+      Переход к следующему событию.
+      Прибор не отказывает: он либо свободен, либо занят.
+      end note
+    end
+  end
+  Selection --> Engine: назначения выполнены
+  Engine -> View: showState(currentTime) [ОД1]
+  View --> Engine: шаг отображён
+end
+Engine -> Stats: makeReport(currentTime) [ОР1]
+Stats --> Engine: SimulationResult
+note over Engine,Cal
+После последнего ARRIVAL уже запланированные SERVICE_END
+обрабатываются до опустошения календаря и системы.
+end note
+@enduml
