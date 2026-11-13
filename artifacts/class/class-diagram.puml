@@ -13,6 +13,9 @@ package "Модель и события" {
     - serviceStartTime: std::optional<double>
     - departureTime: std::optional<double>
     - status: OrderStatus
+    + markStarted(double t): void
+    + markDone(double t): void
+    + markRefused(double t): void
     + waitingTime(): double
     + systemTime(): double
   }
@@ -31,6 +34,8 @@ package "Модель и события" {
     + type: EventType
     + sourceId: int
     + deviceId: int
+    + seq: long
+    + operator<(const Event& other): bool
   }
   class EventCalendar {
     - pending: std::priority_queue<Event>
@@ -115,6 +120,7 @@ package "Управление и результаты" {
     - generatedBySource: std::map<int,int>
     - refusedBySource: std::map<int,int>
     - completed: std::vector<Order>
+    - refused: std::vector<Order>
     + registerArrival(const Order& order): void
     + registerRefusal(const Order& order, double t): void
     + registerStart(const Order& order, int deviceId, double t): void
@@ -122,6 +128,8 @@ package "Управление и результаты" {
     + makeReport(double endTime): SimulationResult
   }
   class SimulationResult {
+    + endTime: double
+    + total: Metrics
     + perSourceMetrics: std::map<int,Metrics>
     + utilization: std::map<int,double>
   }
@@ -147,7 +155,7 @@ SimulationEngine *-- DevicePool
 SimulationEngine *-- StatisticsCollector
 SimulationEngine *-- PlacementDispatcher
 SimulationEngine *-- SelectionDispatcher
-SimulationEngine o-- "1..*" OrderSource
+SimulationEngine *-- "1..*" OrderSource
 PlacementDispatcher --> BufferQueue : buffer&
 PlacementDispatcher --> StatisticsCollector : statistics&
 SelectionDispatcher --> BufferQueue : buffer&
@@ -171,6 +179,25 @@ note bottom of BufferQueue
 Д1ОО4 — вытесняется последний поступивший;
 Д2Б4 — одна заявка: приоритет источника;
 при равенстве выбран самый новый чек.
+end note
+note top of Order
+Статус меняют:
+WAITING — при создании (OrderSource::generate);
+SERVICING — ServiceDevice::start → markStarted;
+DONE — ServiceDevice::finish → markDone;
+REFUSED — BufferQueue::evictNewest → markRefused.
+end note
+note bottom of EventCalendar
+Порядок извлечения событий:
+1) по возрастанию time;
+2) при равном time сначала SERVICE_END, затем ARRIVAL
+   (освободившийся прибор успевает принять заявку);
+3) при полном равенстве — по seq (порядок постановки).
+end note
+note bottom of StatisticsCollector
+Отказные заявки хранятся отдельно:
+их время в буфере входит во время пребывания в системе.
+ОР1: показатели по источникам и общие (total).
 end note
 note bottom of DevicePool
 Д2П2: поиск свободного прибора по кольцу;
