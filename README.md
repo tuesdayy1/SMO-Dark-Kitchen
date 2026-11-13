@@ -51,7 +51,12 @@
 | [`artifacts/class/class-diagram.puml`](artifacts/class/class-diagram.puml) | Диаграмма классов: компоненты, поля, методы и связи |
 | [`artifacts/flowchart/flowchart-swimlanes.puml`](artifacts/flowchart/flowchart-swimlanes.puml) | Блок-схема алгоритма с дорожками ответственности |
 
-> Если в репозитории используются другие имена файлов (например, исходные `.docx` вместо `.md`), пути в таблице нужно заменить на фактические перед публикацией.
+## Принятые проектные решения
+
+- **Одновременные события.** При равном модельном времени сначала обрабатывается `SERVICE_END`, затем `ARRIVAL`: освободившийся прибор успевает принять заявку, и лишнего вытеснения не происходит. При полном равенстве события упорядочиваются по порядковому номеру постановки (`seq`).
+- **Статусы заявки.** `WAITING` ставится при генерации, `SERVICING` — при начале обслуживания, `DONE` — при завершении, `REFUSED` — при вытеснении из буфера.
+- **Статистика отказов.** Вытесненные заявки сохраняются отдельно; время, проведённое ими в буфере, учитывается во времени пребывания в системе.
+- **ОР1** содержит показатели по каждому источнику и общие (`total`).
 
 ## Сценарии, отражаемые в проектировании
 
@@ -67,16 +72,20 @@
 SMO-Dark-Kitchen/
 ├── README.md
 ├── docs/
-│   ├── business-domain.md
-│   └── mapping.md
+│   ├── business-domain.md   # текстовая копия DOCX
+│   ├── mapping.md           # текстовая копия DOCX
+│   └── originals/           # исходные DOCX
 ├── artifacts/
 │   ├── sequence/
-│   │   └── main-sequence.puml
+│   │   ├── main-sequence.puml
+│   │   └── main-sequence.svg
 │   ├── class/
-│   │   └── class-diagram.puml
+│   │   ├── class-diagram.puml
+│   │   └── class-diagram.svg
 │   └── flowchart/
-│       └── flowchart-swimlanes.puml
-└── report/                  # Материалы итогового отчёта (позднее)
+│       ├── flowchart-swimlanes.puml
+│       └── flowchart-swimlanes.svg
+└── report/                  # будет создана на этапе отчёта
 ```
 
 ## Просмотр диаграмм
