@@ -16,26 +16,22 @@ note over Source,Pool
 ИБ: бесконечные источники (до заданного лимита моделирования)
 ИЗ2: равномерные интервалы поступления
 ПЗ1: экспоненциальная длительность обслуживания
-Диспетчеры — программные компоненты; приборы — повара в бизнес-домене.
+Диспетчеры и приборы (программные повара) — алгоритмы, людей в контуре нет.
 end note
-Engine -> Source: scheduleNext(0)
-Source -> Cal: schedule(ARRIVAL, tNext)
+Engine -> Source: scheduleNext(0) [ИБ]
+Source -> Cal: schedule(ARRIVAL, tNext) [ИЗ2: tNext = t + U(a, b)]
 Cal --> Source: событие сохранено
 
 loop Пока календарь не пуст
   Engine -> Cal: popNext()
   Cal --> Engine: Event(time, type, sourceId, deviceId)
-  note right of Cal
-  При равном time: сначала SERVICE_END,
-  затем ARRIVAL; далее по seq.
-  end note
   Engine -> Engine: currentTime = event.time
   alt event.type == ARRIVAL
     Engine -> Source: generate(currentTime)
     Source --> Engine: Order
     Engine -> Source: scheduleNext(currentTime) [если лимит не достигнут]
     opt Генерация продолжается
-      Source -> Cal: schedule(ARRIVAL, tNext)
+      Source -> Cal: schedule(ARRIVAL, tNext) [ИЗ2]
       Cal --> Source: событие сохранено
     end
     Engine -> Placement: onArrival(order, currentTime)
@@ -43,10 +39,13 @@ loop Пока календарь не пуст
     Stats --> Placement: учтено
     Placement -> Buffer: hasFreeSlot()
     Buffer --> Placement: true / false
-    alt Есть место (включая Happy Flow)
+    alt HappyFlow: буфер пуст, есть свободный прибор
       Placement -> Buffer: enqueueAtEnd(order) [Д1ОЗ2]
-      Buffer --> Placement: позиция
-    else Буфер полон, приборы заняты
+      Buffer --> Placement: позиция 1 (ниже ДВ сразу отправит на прибор)
+    else Есть место в буфере, все приборы заняты
+      Placement -> Buffer: enqueueAtEnd(order) [Д1ОЗ2]
+      Buffer --> Placement: позиция в конце очереди
+    else Буфер полон, все приборы заняты
       Placement -> Buffer: evictNewest() [Д1ОО4]
       Buffer --> Placement: вытесненный Order (status = REFUSED)
       Placement -> Stats: registerRefusal(evicted, currentTime)
@@ -69,12 +68,12 @@ loop Пока календарь не пуст
     Selection -> Pool: findFreeRoundRobin() [Д2П2]
     Pool --> Selection: deviceId / none
     alt Заявка ожидает и свободный прибор найден
-      Selection -> Buffer: takeHighestPriorityNewest() [Д2Б4]
+      Selection -> Buffer: takeHighestPriorityOldest() [Д2Б4]
       Buffer --> Selection: выбранный Order; очередь сдвинута
       note right of Buffer
-      Д2Б4: приоритет номера источника, одна заявка.
-      При равном приоритете здесь принято правило:
-      последняя поступившая (из бизнес-домена).
+      Д2Б4: одна заявка источника с высшим приоритетом;
+      при равном приоритете — самая ранняя
+      (по Д1ОО4 в отказ уходит самая новая).
       end note
       Selection -> Pool: start(deviceId, order, currentTime) [ПЗ1]
       Pool --> Selection: finishTime; status = SERVICING; УП переведён за deviceId

@@ -64,7 +64,7 @@ package "Буфер и диспетчеры" {
     + isEmpty(): bool
     + enqueueAtEnd(const Order& order): size_t
     + evictNewest(): Order
-    + takeHighestPriorityNewest(): Order
+    + takeHighestPriorityOldest(): Order
     + snapshot(): std::vector<Order>
   }
   class PlacementDispatcher {
@@ -178,7 +178,7 @@ note bottom of BufferQueue
 Д1ОЗ2 — в конец очереди со сдвигом;
 Д1ОО4 — вытесняется последний поступивший;
 Д2Б4 — одна заявка: приоритет источника;
-при равенстве выбран самый новый чек.
+при равенстве выбирается самый ранний чек.
 end note
 note top of Order
 Статус меняют:
